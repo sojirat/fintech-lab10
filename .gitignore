@@ -2,3 +2,5 @@
 **/*.pyc
 backend/models/
 backend/db/
+
+.claude/

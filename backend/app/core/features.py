@@ -27,8 +27,10 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     # hour of day
     if "Timestamp" in out.columns:
         out["Hour"] = out["Timestamp"].dt.hour.fillna(0).astype(int)
+        out["DayOfWeek"] = out["Timestamp"].dt.dayofweek.fillna(0).astype(int)
     else:
         out["Hour"] = 0
+        out["DayOfWeek"] = 0
 
     # days since last login
     if "LastLogin" in out.columns:
@@ -49,18 +51,30 @@ def add_derived_features(df: pd.DataFrame) -> pd.DataFrame:
     else:
         out["TxCount_1h"] = 1
 
-    # ratio: amount / customer average
+    # ratio: amount / customer average and stddev
     out["CustomerAvgAmount"] = out.groupby("CustomerID")["Amount"].transform("mean")
+    out["CustomerStdAmount"] = out.groupby("CustomerID")["Amount"].transform("std").fillna(1)
     out["AmountToCustomerAvg"] = out["Amount"] / out["CustomerAvgAmount"].replace({0: np.nan})
 
+    # Calculate AnomalyScore: normalized deviation from customer's typical behavior
+    out["AnomalyScore"] = ((out["Amount"] - out["CustomerAvgAmount"]) / out["CustomerStdAmount"].replace({0: 1})).abs()
+    out["AnomalyScore"] = out["AnomalyScore"].fillna(0)
+
+    # Amount percentiles
+    out["AmountPercentile"] = out.groupby("CustomerID")["Amount"].rank(pct=True)
+
+    # Account balance ratio
+    out["AmountToBalance"] = out["Amount"] / out["AccountBalance"].replace({0: np.nan})
+
     # ensure all numeric columns exist
-    for col in ["AnomalyScore", "AccountBalance"]:
+    for col in ["AccountBalance"]:
         if col not in out.columns:
             out[col] = np.nan
 
     # basic clean
-    for c in ["Amount", "AnomalyScore", "Age", "AccountBalance", "Hour", "DaysSinceLastLogin", "TxCount_1h", "AmountToCustomerAvg"]:
-        out[c] = pd.to_numeric(out[c], errors="coerce")
+    for c in ["Amount", "AnomalyScore", "Age", "AccountBalance", "Hour", "DayOfWeek", "DaysSinceLastLogin", "TxCount_1h", "AmountToCustomerAvg", "AmountPercentile", "AmountToBalance"]:
+        if c in out.columns:
+            out[c] = pd.to_numeric(out[c], errors="coerce")
 
     return out
 
@@ -70,7 +84,7 @@ def get_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     d = add_derived_features(df)
 
     # Add additional numeric cols used by models
-    numeric = NUMERIC_COLS + ["Hour", "DaysSinceLastLogin", "TxCount_1h", "AmountToCustomerAvg"]
+    numeric = NUMERIC_COLS + ["Hour", "DayOfWeek", "DaysSinceLastLogin", "TxCount_1h", "AmountToCustomerAvg", "AmountPercentile", "AmountToBalance"]
     categorical = CATEGORICAL_COLS
 
     # Some datasets may miss categoricals
@@ -83,6 +97,7 @@ def get_feature_frame(df: pd.DataFrame) -> pd.DataFrame:
     for c in numeric:
         if c not in d.columns:
             d[c] = np.nan
+        d[c] = d[c].fillna(0)
 
     return d[numeric + categorical].copy()
 
