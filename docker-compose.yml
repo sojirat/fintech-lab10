@@ -1,0 +1,52 @@
+services:
+  redis:
+    image: redis:7-alpine
+    container_name: lab10-redis
+    ports:
+      - "6379:6379"
+    restart: unless-stopped
+
+  api:
+    build: ./backend
+    container_name: lab10-api
+    ports:
+      - "8000:8000"
+    environment:
+      - DATA_DIR=/app/data
+      - MODELS_DIR=/app/models
+      - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_PER_MIN=120
+      - CORS_ORIGINS=http://localhost:3000,http://127.0.0.1:3000
+    volumes:
+      - ./data:/app/data:ro
+      - ./backend/models:/app/models
+      - ./backend/db:/app/db
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+  frontend:
+    build: ./frontend
+    container_name: lab10-frontend
+    ports:
+      - "3000:3000"
+    environment:
+      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+    depends_on:
+      - api
+    restart: unless-stopped
+
+  jupyter:
+    image: jupyter/scipy-notebook:latest
+    container_name: lab10-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - JUPYTER_ENABLE_LAB=yes
+      - JUPYTER_TOKEN=fintech_lab10
+    volumes:
+      - .:/home/jovyan/work
+    depends_on:
+      - api
+      - redis
+    restart: unless-stopped
